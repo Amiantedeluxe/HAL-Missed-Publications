@@ -36,6 +36,14 @@ th button{all:unset;cursor:pointer;font-weight:700;white-space:nowrap}
 th button:focus-visible{outline:2px solid var(--accent)}
 tr:hover td{background:var(--hl)}
 td a{color:var(--accent)}
+.bar select,td select{font:inherit;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)}
+.bar select{padding:8px 10px}
+td select{font-size:.85rem;padding:4px 6px}
+.bar label{flex-direction:row;align-items:center;font-weight:400;gap:6px;white-space:nowrap}
+.bar label input{flex:none;width:110px;min-width:0}
+tr[data-s="done"] td:not(:first-child),tr[data-s="skip"] td:not(:first-child){opacity:.55}
+tr[data-s="done"] td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
 .empty{padding:24px;color:var(--muted)}
 </style>
 </head>
@@ -61,6 +69,13 @@ td a{color:var(--accent)}
 <section id="results">
   <div class="bar">
     <input id="filter" type="search" placeholder="Filtrer (auteur, titre, déposant…)" aria-label="Filtrer les résultats">
+    <select id="sfilter" aria-label="Filtrer par statut">
+      <option value="">Tous les statuts</option>
+      <option value="todo">À traiter</option>
+      <option value="done">Tamponnée</option>
+      <option value="skip">À ne pas tamponner</option>
+    </select>
+    <label title="Préfixe du portail institutionnel, ex. paris1 pour paris1.hal.science">Portail <input id="portal" placeholder="paris1" autocomplete="off"></label>
     <span id="count"></span>
     <button id="csv" type="button" class="ghost">Exporter en CSV</button>
   </div>
@@ -75,9 +90,42 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const asList = v => v == null ? [] : Array.isArray(v) ? v : [v];
 const normName = s => (s || "").replace(/\s*\[[^\]]*\]\s*$/, "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
 const safeUrl = u => /^https?:\/\//.test(u || "");
-const COLS = [["halId","Notice"],["auteur","Auteur non affilié"],["annee","Année"],["titre","Titre"],["type","Type"],["doi","DOI"],["deposant","Déposant"],["fenetre","Fenêtre"]];
+const COLS = [["statut","Statut"],["halId","Notice"],["auteur","Auteur non affilié"],["annee","Année"],["titre","Titre"],["type","Type"],["doi","DOI"],["deposant","Déposant"],["fenetre","Fenêtre"]];
 const CSV_COLS = [...COLS, ["url","Lien"]];
-let stopFlag = false, rows = [], sortKey = "auteur", sortDir = 1;
+const STATUS = {todo: "À traiter", done: "Tamponnée", skip: "À ne pas tamponner"};
+const lsGet = (k, d) => { try { const v = localStorage.getItem("halmp-" + k); return v == null ? d : JSON.parse(v); } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem("halmp-" + k, JSON.stringify(v)); } catch {} };
+const statuses = lsGet("status", {});
+let stopFlag = false, rows = [], shown = 0, sortKey = "auteur", sortDir = 1;
+
+function portalPrefix(){
+  return $("portal").value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\.hal\.science.*$/, "").replace(/[^a-z0-9-]/g, "");
+}
+function displayUrl(r){
+  if (!safeUrl(r.url)) return "";
+  const p = portalPrefix();
+  if (!p) return r.url;
+  try { return `https://${p}.hal.science${new URL(r.url).pathname}`; } catch { return r.url; }
+}
+function showCount(){
+  $("count").textContent = `${shown} / ${rows.length} notices · ${rows.filter(r => r.statut === "todo").length} à traiter`;
+}
+function statusSelect(r, tr){
+  const sel = document.createElement("select");
+  sel.setAttribute("aria-label", "Statut de la notice " + r.halId);
+  for (const [v, l] of Object.entries(STATUS)){
+    const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o);
+  }
+  sel.value = r.statut;
+  sel.onchange = () => {
+    r.statut = sel.value;
+    if (r.statut === "todo") delete statuses[r.key]; else statuses[r.key] = r.statut;
+    lsSet("status", statuses);
+    tr.dataset.s = r.statut;
+    if ($("sfilter").value) render(); else showCount();
+  };
+  return sel;
+}
 
 function log(m){ const el = $("log"); el.textContent += m + "\n"; el.scrollTop = el.scrollHeight; }
 function status(m){ $("status").textContent = m; }
@@ -195,7 +243,9 @@ async function findCandidates(coll, authors, margin){
           if (!set.has(pid) || aff.has(pid)) continue;
           const a = authors.get(pid);
           if (y != null && a.min != null && (y < a.min - margin || y > a.max + margin)) continue;
-          found.set(d.docid + "-" + pid, {
+          const key = d.docid + "-" + pid;
+          found.set(key, {
+            key, statut: statuses[key] || "todo",
             halId: d.halId_s || "",
             url: d.uri_s || (d.halId_s ? "https://hal.science/" + d.halId_s : ""),
             annee: y || "", type: d.docType_s || "", titre: asList(d.title_s)[0] || "",
@@ -230,9 +280,10 @@ function link(href, text){
 
 function render(){
   const f = $("filter").value.trim().toLowerCase();
-  const list = rows.filter(r => !f || Object.values(r).join(" ").toLowerCase().includes(f));
+  const sf = $("sfilter").value;
+  const list = rows.filter(r => (!sf || r.statut === sf) && (!f || COLS.map(([k]) => r[k]).join(" ").toLowerCase().includes(f)));
   list.sort((a, b) => String(a[sortKey]).localeCompare(String(b[sortKey]), "fr", {numeric: true}) * sortDir);
-  $("count").textContent = `${list.length} / ${rows.length} notices`;
+  shown = list.length; showCount();
   const body = $("body"); body.replaceChildren();
   if (!list.length){
     const tr = document.createElement("tr"), td = document.createElement("td");
@@ -241,9 +292,12 @@ function render(){
   }
   for (const r of list){
     const tr = document.createElement("tr");
+    tr.dataset.s = r.statut;
     for (const [k] of COLS){
       const td = document.createElement("td");
-      if ((k === "halId" || k === "titre") && safeUrl(r.url)) td.append(link(r.url, r[k] || r.halId));
+      const u = displayUrl(r);
+      if (k === "statut") td.append(statusSelect(r, tr));
+      else if ((k === "halId" || k === "titre") && u) td.append(link(u, r[k] || r.halId));
       else if (k === "doi" && r.doi) td.append(link("https://doi.org/" + encodeURI(r.doi), r.doi));
       else td.textContent = r[k];
       tr.append(td);
@@ -255,7 +309,8 @@ function render(){
 function exportCsv(){
   const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [CSV_COLS.map(c => esc(c[1])).join(",")];
-  for (const r of rows) lines.push(CSV_COLS.map(([k]) => esc(r[k])).join(","));
+  const cell = (r, k) => k === "statut" ? STATUS[r.statut] : k === "url" ? displayUrl(r) : r[k];
+  for (const r of rows) lines.push(CSV_COLS.map(([k]) => esc(cell(r, k))).join(","));
   const blob = new Blob(["\ufeff" + lines.join("\r\n")], {type: "text/csv;charset=utf-8"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -300,6 +355,9 @@ $("f").addEventListener("submit", async e => {
 $("stop").onclick = () => { stopFlag = true; };
 $("filter").oninput = render;
 $("csv").onclick = exportCsv;
+$("sfilter").onchange = render;
+$("portal").value = lsGet("portal", "");
+$("portal").oninput = () => { lsSet("portal", $("portal").value); render(); };
 </script>
 </body>
 </html>
