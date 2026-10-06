@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notices à tamponner — HAL</title>
 <style>
-:root{--bg:#f3f5f7;--surface:#fff;--ink:#1b2733;--muted:#5b6a78;--line:#d5dce2;--accent:#0e6f73;--accent-ink:#fff;--hl:#e6f2f2}
-@media (prefers-color-scheme:dark){:root{--bg:#10171d;--surface:#18222b;--ink:#e6ecf1;--muted:#93a3b1;--line:#2c3a46;--accent:#4fb3b8;--accent-ink:#0b1519;--hl:#1c2f33}}
+:root{--bg:#f3f5f7;--surface:#fff;--ink:#1b2733;--muted:#5b6a78;--line:#d5dce2;--accent:#0e6f73;--accent-ink:#fff;--hl:#e6f2f2;--ok:#1a7f37;--no:#c62828}
+@media (prefers-color-scheme:dark){:root{--bg:#10171d;--surface:#18222b;--ink:#e6ecf1;--muted:#93a3b1;--line:#2c3a46;--accent:#4fb3b8;--accent-ink:#0b1519;--hl:#1c2f33;--ok:#4cc36f;--no:#ef6b6b}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,"Segoe UI",system-ui,sans-serif}
 main{max-width:1200px;margin:0 auto;padding:28px 20px 60px}
 h1{font-size:1.6rem;margin:0 0 4px;letter-spacing:-.01em}
 .sub{color:var(--muted);margin:0 0 22px;max-width:70ch}
-form{display:grid;grid-template-columns:1fr 1.4fr 110px auto;gap:12px;align-items:end;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px}
+form{display:grid;grid-template-columns:1fr 1.4fr 110px 130px auto;gap:12px;align-items:end;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px}
 label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
 label small{font-weight:400;color:var(--muted)}
 input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)}
@@ -36,11 +36,15 @@ th button{all:unset;cursor:pointer;font-weight:700;white-space:nowrap}
 th button:focus-visible{outline:2px solid var(--accent)}
 tr:hover td{background:var(--hl)}
 td a{color:var(--accent)}
-.bar select,td select{font:inherit;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)}
-.bar select{padding:8px 10px}
-td select{font-size:.85rem;padding:4px 6px}
-.bar label{flex-direction:row;align-items:center;font-weight:400;gap:6px;white-space:nowrap}
-.bar label input{flex:none;width:110px;min-width:0}
+.bar select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)}
+.legend{color:var(--muted);font-size:.85rem}
+td:first-child,th:first-child{width:1%;white-space:nowrap}
+.st{display:flex;gap:4px}
+.st button{width:28px;height:28px;padding:0;display:grid;place-items:center;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:5px;font-size:1rem;line-height:1;font-weight:700}
+.st button[data-v="done"]:hover{color:var(--ok);border-color:var(--ok)}
+.st button[data-v="skip"]:hover{color:var(--no);border-color:var(--no)}
+.st button[data-v="done"][aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:var(--accent-ink)}
+.st button[data-v="skip"][aria-pressed="true"]{background:var(--no);border-color:var(--no);color:var(--accent-ink)}
 tr[data-s="done"] td:not(:first-child),tr[data-s="skip"] td:not(:first-child){opacity:.55}
 tr[data-s="done"] td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
@@ -56,6 +60,7 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
   <label>Code de la collection<input id="coll" required placeholder="CRHXIX" autocomplete="off"></label>
   <label>Identifiants de structure <small>facultatif, séparés par un espace</small><input id="ids" placeholder="216924 542269" autocomplete="off"></label>
   <label>Marge (ans)<input id="margin" type="number" min="0" max="10" value="1"></label>
+  <label>Portail <small>facultatif</small><input id="portal" placeholder="paris1" autocomplete="off" title="Préfixe du portail institutionnel : paris1 donne paris1.hal.science"></label>
   <div class="actions">
     <button id="go" type="submit">Lancer l'analyse</button>
     <button id="stop" type="button" class="ghost" disabled>Arrêter</button>
@@ -75,7 +80,7 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
       <option value="done">Tamponnée</option>
       <option value="skip">À ne pas tamponner</option>
     </select>
-    <label title="Préfixe du portail institutionnel, ex. paris1 pour paris1.hal.science">Portail <input id="portal" placeholder="paris1" autocomplete="off"></label>
+    <span class="legend">✓ tamponnée · ✗ à ne pas tamponner</span>
     <span id="count"></span>
     <button id="csv" type="button" class="ghost">Exporter en CSV</button>
   </div>
@@ -110,21 +115,26 @@ function displayUrl(r){
 function showCount(){
   $("count").textContent = `${shown} / ${rows.length} notices · ${rows.filter(r => r.statut === "todo").length} à traiter`;
 }
-function statusSelect(r, tr){
-  const sel = document.createElement("select");
-  sel.setAttribute("aria-label", "Statut de la notice " + r.halId);
-  for (const [v, l] of Object.entries(STATUS)){
-    const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o);
-  }
-  sel.value = r.statut;
-  sel.onchange = () => {
-    r.statut = sel.value;
-    if (r.statut === "todo") delete statuses[r.key]; else statuses[r.key] = r.statut;
-    lsSet("status", statuses);
-    tr.dataset.s = r.statut;
-    if ($("sfilter").value) render(); else showCount();
+function statusButtons(r, tr){
+  const box = document.createElement("div");
+  box.className = "st";
+  const mk = (val, sym, label) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = sym; b.title = label; b.dataset.v = val;
+    b.setAttribute("aria-label", label + " : " + r.halId);
+    b.setAttribute("aria-pressed", String(r.statut === val));
+    b.onclick = () => {
+      r.statut = r.statut === val ? "todo" : val;
+      if (r.statut === "todo") delete statuses[r.key]; else statuses[r.key] = r.statut;
+      lsSet("status", statuses);
+      tr.dataset.s = r.statut;
+      for (const x of box.children) x.setAttribute("aria-pressed", String(x.dataset.v === r.statut));
+      if ($("sfilter").value) render(); else showCount();
+    };
+    return b;
   };
-  return sel;
+  box.append(mk("done", "✓", "Tamponnée"), mk("skip", "✗", "À ne pas tamponner"));
+  return box;
 }
 
 function log(m){ const el = $("log"); el.textContent += m + "\n"; el.scrollTop = el.scrollHeight; }
@@ -296,7 +306,7 @@ function render(){
     for (const [k] of COLS){
       const td = document.createElement("td");
       const u = displayUrl(r);
-      if (k === "statut") td.append(statusSelect(r, tr));
+      if (k === "statut") td.append(statusButtons(r, tr));
       else if ((k === "halId" || k === "titre") && u) td.append(link(u, r[k] || r.halId));
       else if (k === "doi" && r.doi) td.append(link("https://doi.org/" + encodeURI(r.doi), r.doi));
       else td.textContent = r[k];
