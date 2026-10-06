@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notices à tamponner — HAL</title>
+<style>
+:root{--bg:#f3f5f7;--surface:#fff;--ink:#1b2733;--muted:#5b6a78;--line:#d5dce2;--accent:#0e6f73;--accent-ink:#fff;--hl:#e6f2f2}
+@media (prefers-color-scheme:dark){:root{--bg:#10171d;--surface:#18222b;--ink:#e6ecf1;--muted:#93a3b1;--line:#2c3a46;--accent:#4fb3b8;--accent-ink:#0b1519;--hl:#1c2f33}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,"Segoe UI",system-ui,sans-serif}
+main{max-width:1200px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:1.6rem;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:0 0 22px;max-width:70ch}
+form{display:grid;grid-template-columns:1fr 1.4fr 110px auto;gap:12px;align-items:end;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px}
+label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
+label small{font-weight:400;color:var(--muted)}
+input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)}
+input:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font:inherit;cursor:pointer;border-radius:5px;padding:9px 16px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);font-weight:600}
+button.ghost{background:transparent;color:var(--accent)}
+button:disabled{opacity:.5;cursor:default}
+.actions{display:flex;gap:8px}
+@media (max-width:820px){form{grid-template-columns:1fr}}
+#status{margin:18px 0 6px;color:var(--muted);min-height:1.5em}
+progress{width:100%;height:6px;accent-color:var(--accent)}
+details{margin:10px 0}
+pre{max-height:220px;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px;font-size:.8rem;white-space:pre-wrap}
+#results{display:none;margin-top:18px}
+.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.bar input{flex:1;min-width:200px}
+.wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th button{all:unset;cursor:pointer;font-weight:700;white-space:nowrap}
+th button:focus-visible{outline:2px solid var(--accent)}
+tr:hover td{background:var(--hl)}
+td a{color:var(--accent)}
+.empty{padding:24px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<h1>Notices à tamponner</h1>
+<p class="sub">Repère, dans HAL, les notices hors d'une collection où un auteur du laboratoire figure sans aucune affiliation.</p>
+
+<form id="f">
+  <label>Code de la collection<input id="coll" required placeholder="CRHXIX" autocomplete="off"></label>
+  <label>Identifiants de structure <small>facultatif, séparés par un espace</small><input id="ids" placeholder="216924 542269" autocomplete="off"></label>
+  <label>Marge (ans)<input id="margin" type="number" min="0" max="10" value="1"></label>
+  <div class="actions">
+    <button id="go" type="submit">Lancer l'analyse</button>
+    <button id="stop" type="button" class="ghost" disabled>Arrêter</button>
+  </div>
+</form>
+
+<div id="status" role="status"></div>
+<progress id="bar" value="0" max="1" hidden></progress>
+<details><summary>Journal</summary><pre id="log"></pre></details>
+
+<section id="results">
+  <div class="bar">
+    <input id="filter" type="search" placeholder="Filtrer (auteur, titre, déposant…)" aria-label="Filtrer les résultats">
+    <span id="count"></span>
+    <button id="csv" type="button" class="ghost">Exporter en CSV</button>
+  </div>
+  <div class="wrap"><table><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table></div>
+</section>
+</main>
+
+<script>
+const API = "https://api.archives-ouvertes.fr";
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const asList = v => v == null ? [] : Array.isArray(v) ? v : [v];
+const normName = s => (s || "").replace(/\s*\[[^\]]*\]\s*$/, "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+const safeUrl = u => /^https?:\/\//.test(u || "");
+const COLS = [["halId","Notice"],["auteur","Auteur non affilié"],["annee","Année"],["titre","Titre"],["type","Type"],["doi","DOI"],["deposant","Déposant"],["fenetre","Fenêtre"]];
+const CSV_COLS = [...COLS, ["url","Lien"]];
+let stopFlag = false, rows = [], sortKey = "auteur", sortDir = 1;
+
+function log(m){ const el = $("log"); el.textContent += m + "\n"; el.scrollTop = el.scrollHeight; }
+function status(m){ $("status").textContent = m; }
+function progress(v, max){ const b = $("bar"); b.hidden = false; b.max = max || 1; b.value = v; }
+
+async function getJson(path, params){
+  const url = API + path + "?" + new URLSearchParams(params);
+  for (let i = 0; i < 4; i++){
+    if (stopFlag) throw new Error("Analyse arrêtée");
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    } catch (e) {
+      log("! " + e.message + " — nouvel essai");
+      await sleep(1000 * 2 ** i);
+    }
+  }
+  throw new Error("Échec répété de l'API HAL");
+}
+
+async function paginate(params, onDocs){
+  let cursor = "*";
+  while (true){
+    const data = await getJson("/search/", {...params, rows: 500, sort: "docid asc", wt: "json", cursorMark: cursor});
+    const docs = data.response.docs;
+    onDocs(docs, data.response.numFound);
+    const next = data.nextCursorMark;
+    if (!docs.length || !next || next === cursor) break;
+    cursor = next;
+    await sleep(200);
+  }
+}
+
+// "<idForme>-<idPersonne>_FacetSep_<Nom>_JoinSep_<idStructure>_FacetSep_<NomStructure>"
+const cut = (s, sep) => { const i = s.indexOf(sep); if (i < 0) throw 0; return [s.slice(0, i), s.slice(i + sep.length)]; };
+function parseAuthStruct(v){
+  try {
+    const [left, right] = cut(v, "_JoinSep_");
+    const [token, name] = cut(left, "_FacetSep_");
+    const [sid, sname] = cut(right, "_FacetSep_");
+    const pid = token.includes("-") ? parseInt(token.split("-")[1], 10) : parseInt(token, 10);
+    const s = parseInt(sid, 10);
+    if (Number.isNaN(pid) || Number.isNaN(s)) return null;
+    return [pid, name, s, sname];
+  } catch { return null; }
+}
+function docYear(d){ const y = d.producedDateY_i || d.publicationDateY_i; return y ? parseInt(y, 10) : null; }
+
+async function resolveStructures(code){
+  const d = await getJson("/ref/structure/", {q: `code_s:"${code}" OR acronym_s:"${code}"`, fl: "docid,label_s,acronym_s,code_s,valid_s", rows: 20, wt: "json"});
+  return d.response.docs || [];
+}
+
+async function buildSeed(coll, ids, targetName){
+  const entries = [], names = new Map(), counts = new Map();
+  let nDocs = 0, bad = 0, noPerson = 0;
+  await paginate({q: "*:*", fq: "collCode_s:" + coll, fl: "docid,authIdHasStructure_fs,producedDateY_i,publicationDateY_i"}, (docs, total) => {
+    for (const d of docs){
+      nDocs++;
+      const y = docYear(d), seen = new Set();
+      for (const v of asList(d.authIdHasStructure_fs)){
+        const p = parseAuthStruct(v);
+        if (!p){ bad++; continue; }
+        const [pid, name, sid, sname] = p;
+        names.set(sid, sname); seen.add(sid);
+        if (pid <= 0){ noPerson++; continue; }
+        entries.push([pid, name, sid, y]);
+      }
+      for (const s of seen) counts.set(s, (counts.get(s) || 0) + 1);
+    }
+    progress(nDocs, total);
+    status(`Lecture de la collection : ${nDocs} / ${total} notices`);
+  });
+  log(`${nDocs} notices lues dans la collection.`);
+  if (bad) log(`! ${bad} valeurs authIdHasStructure_fs illisibles`);
+  if (noPerson) log(`${noPerson} affiliations sans profil HAL ignorées.`);
+  log("Structures les plus présentes :");
+  [...counts].sort((a, b) => b[1] - a[1]).slice(0, 8).forEach(([s, n]) => log(`  ${s}  ${names.get(s) || "?"}  (${n} notices)`));
+
+  const targets = new Set(ids);
+  if (targetName) for (const [s, nm] of names) if (normName(nm) === targetName && !targets.has(s)){ targets.add(s); log("Identifiant de même nom ajouté : " + s); }
+  log("Structures cibles : " + [...targets].join(", "));
+
+  const authors = new Map();
+  for (const [pid, name, sid, y] of entries){
+    if (!targets.has(sid)) continue;
+    const a = authors.get(pid) || {name, min: null, max: null};
+    if (y){ a.min = a.min == null ? y : Math.min(a.min, y); a.max = a.max == null ? y : Math.max(a.max, y); }
+    authors.set(pid, a);
+  }
+  log(`${authors.size} auteurs affiliés retenus.`);
+  return authors;
+}
+
+async function findCandidates(coll, authors, margin){
+  const ids = [...authors.keys()], size = 30, nb = Math.ceil(ids.length / size), found = new Map();
+  let total = 0;
+  for (let i = 0; i < ids.length; i += size){
+    const batch = ids.slice(i, i + size), set = new Set(batch);
+    status(`Recherche hors collection : lot ${i / size + 1} / ${nb}`);
+    progress(i / size, nb);
+    await paginate({
+      q: "authIdPerson_i:(" + batch.join(" OR ") + ")",
+      fq: "-collCode_s:" + coll,
+      fl: "docid,halId_s,uri_s,title_s,docType_s,producedDateY_i,publicationDateY_i,doiId_s,contributorFullName_s,authIdPerson_i,authIdHasStructure_fs"
+    }, docs => {
+      for (const d of docs){
+        total++;
+        const y = docYear(d);
+        const persons = new Set(asList(d.authIdPerson_i).map(Number)); persons.delete(0);
+        const aff = new Set();
+        for (const v of asList(d.authIdHasStructure_fs)){ const p = parseAuthStruct(v); if (p) aff.add(p[0]); }
+        for (const pid of persons){
+          if (!set.has(pid) || aff.has(pid)) continue;
+          const a = authors.get(pid);
+          if (y != null && a.min != null && (y < a.min - margin || y > a.max + margin)) continue;
+          found.set(d.docid + "-" + pid, {
+            halId: d.halId_s || "",
+            url: d.uri_s || (d.halId_s ? "https://hal.science/" + d.halId_s : ""),
+            annee: y || "", type: d.docType_s || "", titre: asList(d.title_s)[0] || "",
+            doi: d.doiId_s || "", deposant: d.contributorFullName_s || "",
+            auteur: a.name, fenetre: `${a.min}–${a.max}`
+          });
+        }
+      }
+    });
+  }
+  log(`${total} notices hors collection examinées.`);
+  if (!total) log("! Aucune notice hors collection : le champ authIdPerson_i n'est peut-être pas interrogeable.");
+  return [...found.values()];
+}
+
+function head(){
+  const tr = $("head"); tr.replaceChildren();
+  for (const [k, l] of COLS){
+    const th = document.createElement("th"), b = document.createElement("button");
+    b.type = "button";
+    b.textContent = l + (k === sortKey ? (sortDir > 0 ? " ▲" : " ▼") : "");
+    b.onclick = () => { sortDir = k === sortKey ? -sortDir : 1; sortKey = k; head(); render(); };
+    th.append(b); tr.append(th);
+  }
+}
+
+function link(href, text){
+  const a = document.createElement("a");
+  a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = text;
+  return a;
+}
+
+function render(){
+  const f = $("filter").value.trim().toLowerCase();
+  const list = rows.filter(r => !f || Object.values(r).join(" ").toLowerCase().includes(f));
+  list.sort((a, b) => String(a[sortKey]).localeCompare(String(b[sortKey]), "fr", {numeric: true}) * sortDir);
+  $("count").textContent = `${list.length} / ${rows.length} notices`;
+  const body = $("body"); body.replaceChildren();
+  if (!list.length){
+    const tr = document.createElement("tr"), td = document.createElement("td");
+    td.colSpan = COLS.length; td.className = "empty"; td.textContent = "Aucune notice à afficher.";
+    tr.append(td); body.append(tr); return;
+  }
+  for (const r of list){
+    const tr = document.createElement("tr");
+    for (const [k] of COLS){
+      const td = document.createElement("td");
+      if ((k === "halId" || k === "titre") && safeUrl(r.url)) td.append(link(r.url, r[k] || r.halId));
+      else if (k === "doi" && r.doi) td.append(link("https://doi.org/" + encodeURI(r.doi), r.doi));
+      else td.textContent = r[k];
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+}
+
+function exportCsv(){
+  const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [CSV_COLS.map(c => esc(c[1])).join(",")];
+  for (const r of rows) lines.push(CSV_COLS.map(([k]) => esc(r[k])).join(","));
+  const blob = new Blob(["\ufeff" + lines.join("\r\n")], {type: "text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `non_tamponnees_${$("coll").value.trim()}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+$("f").addEventListener("submit", async e => {
+  e.preventDefault();
+  const coll = $("coll").value.trim();
+  const margin = Math.max(0, parseInt($("margin").value, 10) || 0);
+  const ids = ($("ids").value.match(/\d+/g) || []).map(Number);
+  stopFlag = false; rows = []; $("log").textContent = ""; $("results").style.display = "none";
+  $("go").disabled = true; $("stop").disabled = false;
+  try {
+    let struct = ids, targetName = null;
+    if (!ids.length){
+      status("Recherche de la structure…");
+      const found = await resolveStructures(coll);
+      const valid = found.filter(s => s.valid_s === "VALID");
+      const pick = valid.length ? valid : found;
+      if (pick.length !== 1){
+        log("Structures candidates :");
+        found.forEach(s => log(`  ${s.docid}  ${s.label_s}  [${s.valid_s}]`));
+        throw new Error(found.length ? "Plusieurs structures possibles : renseigne un ou plusieurs identifiants (voir le journal)." : "Aucune structure trouvée : renseigne les identifiants de structure.");
+      }
+      struct = [Number(pick[0].docid)];
+      targetName = normName(pick[0].label_s);
+      log(`Structure retenue : ${pick[0].label_s} (${pick[0].docid})`);
+    }
+    const authors = await buildSeed(coll, struct, targetName);
+    if (!authors.size) throw new Error("Aucun auteur trouvé : renseigne un identifiant de structure listé dans le journal.");
+    rows = await findCandidates(coll, authors, margin);
+    status(`Terminé : ${rows.length} couples notice / auteur signalés.`);
+    head(); render(); $("results").style.display = "block";
+  } catch (err) {
+    status("Erreur : " + err.message);
+  } finally {
+    $("go").disabled = false; $("stop").disabled = true; $("bar").hidden = true;
+  }
+});
+$("stop").onclick = () => { stopFlag = true; };
+$("filter").oninput = render;
+$("csv").onclick = exportCsv;
+</script>
+</body>
+</html>
