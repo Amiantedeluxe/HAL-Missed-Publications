@@ -48,6 +48,11 @@ td:first-child,th:first-child{width:1%;white-space:nowrap}
 tr[data-s="done"] td:not(:first-child),tr[data-s="skip"] td:not(:first-child){opacity:.55}
 tr[data-s="done"] td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
+.chk{grid-column:1/-1;flex-direction:row;align-items:center;gap:8px;font-weight:400}
+.chk input{width:auto}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tabs[hidden]{display:none}
+.tabs button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .empty{padding:24px;color:var(--muted)}
 </style>
 </head>
@@ -65,6 +70,7 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
     <button id="go" type="submit">Lancer l'analyse</button>
     <button id="stop" type="button" class="ghost" disabled>Arrêter</button>
   </div>
+  <label class="chk"><input type="checkbox" id="byname"> Chercher aussi par nom <small>auteurs sans fiche HAL, plus lent</small></label>
 </form>
 
 <div id="status" role="status"></div>
@@ -72,6 +78,10 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
 <details><summary>Journal</summary><pre id="log"></pre></details>
 
 <section id="results">
+  <div class="tabs" id="tabs" hidden>
+    <button type="button" class="ghost" data-t="id">Auteurs identifiés <span id="n-id"></span></button>
+    <button type="button" class="ghost" data-t="nom">Par nom, à vérifier <span id="n-nom"></span></button>
+  </div>
   <div class="bar">
     <input id="filter" type="search" placeholder="Filtrer (auteur, titre, déposant…)" aria-label="Filtrer les résultats">
     <select id="sfilter" aria-label="Filtrer par statut">
@@ -96,12 +106,17 @@ const asList = v => v == null ? [] : Array.isArray(v) ? v : [v];
 const normName = s => (s || "").replace(/\s*\[[^\]]*\]\s*$/, "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
 const safeUrl = u => /^https?:\/\//.test(u || "");
 const COLS = [["statut","Statut"],["halId","Notice"],["auteur","Auteur non affilié"],["annee","Année"],["titre","Titre"],["type","Type"],["doi","DOI"],["deposant","Déposant"],["fenetre","Fenêtre"]];
-const CSV_COLS = [...COLS, ["url","Lien"]];
+const CSV_COLS = [["src","Méthode"], ...COLS, ["disc","Disc."], ["hom","Hom."], ["url","Lien"]];
+const cols = () => tab === "nom" ? [...COLS.slice(0, 3), ["disc","Disc."], ["hom","Hom."], ...COLS.slice(3)] : COLS;
+const DISC = {"✓": "Même discipline fine que l'auteur", "~": "Discipline fine non comparable", "≠": "Discipline fine différente de celles de l'auteur"};
+const NORM = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+const top = (m, n) => new Set([...m].filter(([, c]) => c / n >= 0.2).map(([k]) => k));
+const inter = (a, b) => a.some(x => b.has(x));
 const STATUS = {todo: "À traiter", done: "Tamponnée", skip: "À ne pas tamponner"};
 const lsGet = (k, d) => { try { const v = localStorage.getItem("halmp-" + k); return v == null ? d : JSON.parse(v); } catch { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem("halmp-" + k, JSON.stringify(v)); } catch {} };
 const statuses = lsGet("status", {});
-let stopFlag = false, rows = [], shown = 0, sortKey = "auteur", sortDir = 1;
+let stopFlag = false, rows = [], shown = 0, sortKey = "auteur", sortDir = 1, tab = "id";
 
 function portalPrefix(){
   return $("portal").value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\.hal\.science.*$/, "").replace(/[^a-z0-9-]/g, "");
@@ -113,7 +128,8 @@ function displayUrl(r){
   try { return `https://${p}.hal.science${new URL(r.url).pathname}`; } catch { return r.url; }
 }
 function showCount(){
-  $("count").textContent = `${shown} / ${rows.length} notices · ${rows.filter(r => r.statut === "todo").length} à traiter`;
+  const inTab = rows.filter(r => r.src === tab);
+  $("count").textContent = `${shown} / ${inTab.length} notices · ${inTab.filter(r => r.statut === "todo").length} à traiter`;
 }
 function statusButtons(r, tr){
   const box = document.createElement("div");
@@ -147,9 +163,10 @@ async function getJson(path, params){
     if (stopFlag) throw new Error("Analyse arrêtée");
     try {
       const r = await fetch(url);
-      if (!r.ok) throw new Error("HTTP " + r.status);
+      if (!r.ok){ const er = new Error("HTTP " + r.status); er.noRetry = r.status >= 400 && r.status < 500 && r.status !== 429; throw er; }
       return await r.json();
     } catch (e) {
+      if (e.noRetry) throw e;
       log("! " + e.message + " — nouvel essai");
       await sleep(1000 * 2 ** i);
     }
@@ -180,7 +197,7 @@ function parseAuthStruct(v){
     const pid = token.includes("-") ? parseInt(token.split("-")[1], 10) : parseInt(token, 10);
     const s = parseInt(sid, 10);
     if (Number.isNaN(pid) || Number.isNaN(s)) return null;
-    return [pid, name, s, sname];
+    return [pid, name, s, sname, token];
   } catch { return null; }
 }
 function docYear(d){ const y = d.producedDateY_i || d.publicationDateY_i; return y ? parseInt(y, 10) : null; }
@@ -193,7 +210,7 @@ async function resolveStructures(code){
 async function buildSeed(coll, ids, targetName){
   const entries = [], names = new Map(), counts = new Map();
   let nDocs = 0, bad = 0, noPerson = 0;
-  await paginate({q: "*:*", fq: "collCode_s:" + coll, fl: "docid,authIdHasStructure_fs,producedDateY_i,publicationDateY_i"}, (docs, total) => {
+  await paginate({q: "*:*", fq: "collCode_s:" + coll, fl: "docid,authIdHasStructure_fs,producedDateY_i,publicationDateY_i,level0_domain_s,level1_domain_s"}, (docs, total) => {
     for (const d of docs){
       nDocs++;
       const y = docYear(d), seen = new Set();
@@ -203,7 +220,7 @@ async function buildSeed(coll, ids, targetName){
         const [pid, name, sid, sname] = p;
         names.set(sid, sname); seen.add(sid);
         if (pid <= 0){ noPerson++; continue; }
-        entries.push([pid, name, sid, y]);
+        entries.push([pid, name, sid, y, d.docid, asList(d.level0_domain_s), asList(d.level1_domain_s)]);
       }
       for (const s of seen) counts.set(s, (counts.get(s) || 0) + 1);
     }
@@ -220,11 +237,18 @@ async function buildSeed(coll, ids, targetName){
   if (targetName) for (const [s, nm] of names) if (normName(nm) === targetName && !targets.has(s)){ targets.add(s); log("Identifiant de même nom ajouté : " + s); }
   log("Structures cibles : " + [...targets].join(", "));
 
-  const authors = new Map();
-  for (const [pid, name, sid, y] of entries){
+  const authors = new Map(), seenPD = new Set();
+  for (const [pid, name, sid, y, did, d0, d1] of entries){
     if (!targets.has(sid)) continue;
-    const a = authors.get(pid) || {name, min: null, max: null};
+    const a = authors.get(pid) || {name, names: new Set(), min: null, max: null, d0: new Map(), d1: new Map(), n: 0};
+    a.names.add(name);
     if (y){ a.min = a.min == null ? y : Math.min(a.min, y); a.max = a.max == null ? y : Math.max(a.max, y); }
+    const k = did + "-" + pid;
+    if (!seenPD.has(k)){
+      seenPD.add(k); a.n++;
+      for (const x of d0) a.d0.set(x, (a.d0.get(x) || 0) + 1);
+      for (const x of d1) a.d1.set(x, (a.d1.get(x) || 0) + 1);
+    }
     authors.set(pid, a);
   }
   log(`${authors.size} auteurs affiliés retenus.`);
@@ -255,7 +279,7 @@ async function findCandidates(coll, authors, margin){
           if (y != null && a.min != null && (y < a.min - margin || y > a.max + margin)) continue;
           const key = d.docid + "-" + pid;
           found.set(key, {
-            key, statut: statuses[key] || "todo",
+            key, src: "id", statut: statuses[key] || "todo",
             halId: d.halId_s || "",
             url: d.uri_s || (d.halId_s ? "https://hal.science/" + d.halId_s : ""),
             annee: y || "", type: d.docType_s || "", titre: asList(d.title_s)[0] || "",
@@ -271,9 +295,78 @@ async function findCandidates(coll, authors, margin){
   return [...found.values()];
 }
 
+async function findByName(coll, authors, margin){
+  const byName = new Map(), forms = new Map();
+  for (const [pid, a] of authors) for (const nm of a.names){
+    const k = NORM(nm); if (!k) continue;
+    if (!byName.has(k)) byName.set(k, new Set());
+    byName.get(k).add(pid);
+    if (!forms.has(k)) forms.set(k, nm);
+  }
+  const names = [...forms.values()], size = 15, nb = Math.ceil(names.length / size);
+  const persons = new Map(), cands = [];
+  let field = "authFullName_t", total = 0;
+  const fl = "docid,halId_s,uri_s,title_s,docType_s,producedDateY_i,publicationDateY_i,doiId_s,contributorFullName_s,authIdHasStructure_fs,authFullNameFormIDPersonIDIDHal_fs,level0_domain_s,level1_domain_s";
+  for (let i = 0; i < names.length; i += size){
+    status(`Recherche par nom : lot ${i / size + 1} / ${nb}`); progress(i / size, nb);
+    for (let attempt = 0; attempt < 2; attempt++){
+      const q = field + ":(" + names.slice(i, i + size).map(n => '"' + n.replace(/["\\]/g, " ") + '"').join(" OR ") + ")";
+      try {
+        await paginate({q, fq: "-collCode_s:" + coll, fl}, docs => {
+          for (const d of docs){
+            total++;
+            const aff = new Set();
+            for (const v of asList(d.authIdHasStructure_fs)){ const p = parseAuthStruct(v); if (p) aff.add(p[4]); }
+            for (const v of asList(d.authFullNameFormIDPersonIDIDHal_fs)){
+              const [nm, token] = v.split("_FacetSep_");
+              if (!token) continue;
+              const pid = parseInt(token.split("-")[1], 10), k = NORM(nm);
+              if (pid > 0){ if (!persons.has(k)) persons.set(k, new Set()); persons.get(k).add(pid); continue; }
+              if (pid !== 0 || aff.has(token) || !byName.has(k)) continue;
+              cands.push({key: "n:" + d.docid + "-" + token, d, k, y: docYear(d), l0: asList(d.level0_domain_s), l1: asList(d.level1_domain_s), nm});
+            }
+          }
+        });
+        break;
+      } catch (e) {
+        if (attempt === 0 && e.noRetry && field === "authFullName_t"){ log("Champ authFullName_t refusé, essai avec authFullName_s."); field = "authFullName_s"; continue; }
+        throw e;
+      }
+    }
+  }
+  const out = new Map();
+  for (const c of cands){
+    for (const pid of byName.get(c.k)){
+      const a = authors.get(pid);
+      if (c.y != null && a.min != null && (c.y < a.min - margin || c.y > a.max + margin)) continue;
+      const p0 = top(a.d0, a.n), p1 = top(a.d1, a.n);
+      if (c.l0.length && p0.size && !inter(c.l0, p0)) continue;
+      const disc = c.l1.length && p1.size ? (inter(c.l1, p1) ? "✓" : "≠") : "~";
+      const hom = [...(persons.get(c.k) || [])].filter(x => !authors.has(x)).length;
+      const d = c.d;
+      out.set(c.key, {
+        key: c.key, src: "nom", statut: statuses[c.key] || "todo",
+        halId: d.halId_s || "", url: d.uri_s || (d.halId_s ? "https://hal.science/" + d.halId_s : ""),
+        annee: c.y || "", type: d.docType_s || "", titre: asList(d.title_s)[0] || "",
+        doi: d.doiId_s || "", deposant: d.contributorFullName_s || "",
+        auteur: c.nm, fenetre: `${a.min}–${a.max}`, disc, hom
+      });
+      break;
+    }
+  }
+  log(`${total} notices examinées par nom, ${out.size} candidates retenues.`);
+  return [...out.values()];
+}
+
+function updateTabs(){
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.t === tab)));
+  $("n-id").textContent = `(${rows.filter(r => r.src === "id").length})`;
+  $("n-nom").textContent = `(${rows.filter(r => r.src === "nom").length})`;
+}
+
 function head(){
   const tr = $("head"); tr.replaceChildren();
-  for (const [k, l] of COLS){
+  for (const [k, l] of cols()){
     const th = document.createElement("th"), b = document.createElement("button");
     b.type = "button";
     b.textContent = l + (k === sortKey ? (sortDir > 0 ? " ▲" : " ▼") : "");
@@ -291,22 +384,24 @@ function link(href, text){
 function render(){
   const f = $("filter").value.trim().toLowerCase();
   const sf = $("sfilter").value;
-  const list = rows.filter(r => (!sf || r.statut === sf) && (!f || COLS.map(([k]) => r[k]).join(" ").toLowerCase().includes(f)));
-  list.sort((a, b) => String(a[sortKey]).localeCompare(String(b[sortKey]), "fr", {numeric: true}) * sortDir);
+  const list = rows.filter(r => r.src === tab && (!sf || r.statut === sf) && (!f || cols().map(([k]) => r[k]).join(" ").toLowerCase().includes(f)));
+  const sv = r => sortKey === "disc" ? "✓~≠".indexOf(r.disc) : r[sortKey] ?? "";
+  list.sort((a, b) => String(sv(a)).localeCompare(String(sv(b)), "fr", {numeric: true}) * sortDir);
   shown = list.length; showCount();
   const body = $("body"); body.replaceChildren();
   if (!list.length){
     const tr = document.createElement("tr"), td = document.createElement("td");
-    td.colSpan = COLS.length; td.className = "empty"; td.textContent = "Aucune notice à afficher.";
+    td.colSpan = cols().length; td.className = "empty"; td.textContent = "Aucune notice à afficher.";
     tr.append(td); body.append(tr); return;
   }
   for (const r of list){
     const tr = document.createElement("tr");
     tr.dataset.s = r.statut;
-    for (const [k] of COLS){
+    for (const [k] of cols()){
       const td = document.createElement("td");
       const u = displayUrl(r);
       if (k === "statut") td.append(statusButtons(r, tr));
+      else if (k === "disc"){ td.textContent = r.disc; td.title = DISC[r.disc] || ""; }
       else if ((k === "halId" || k === "titre") && u) td.append(link(u, r[k] || r.halId));
       else if (k === "doi" && r.doi) td.append(link("https://doi.org/" + encodeURI(r.doi), r.doi));
       else td.textContent = r[k];
@@ -319,7 +414,7 @@ function render(){
 function exportCsv(){
   const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [CSV_COLS.map(c => esc(c[1])).join(",")];
-  const cell = (r, k) => k === "statut" ? STATUS[r.statut] : k === "url" ? displayUrl(r) : r[k];
+  const cell = (r, k) => k === "statut" ? STATUS[r.statut] : k === "url" ? displayUrl(r) : k === "src" ? (r.src === "nom" ? "nom" : "identifiant") : r[k] ?? "";
   for (const r of rows) lines.push(CSV_COLS.map(([k]) => esc(cell(r, k))).join(","));
   const blob = new Blob(["\ufeff" + lines.join("\r\n")], {type: "text/csv;charset=utf-8"});
   const a = document.createElement("a");
@@ -354,7 +449,11 @@ $("f").addEventListener("submit", async e => {
     const authors = await buildSeed(coll, struct, targetName);
     if (!authors.size) throw new Error("Aucun auteur trouvé : renseigne un identifiant de structure listé dans le journal.");
     rows = await findCandidates(coll, authors, margin);
-    status(`Terminé : ${rows.length} couples notice / auteur signalés.`);
+    const byname = $("byname").checked;
+    if (byname) rows = rows.concat(await findByName(coll, authors, margin));
+    const nId = rows.filter(r => r.src === "id").length, nNom = rows.length - nId;
+    status(`Terminé : ${nId} notices par identifiant` + (byname ? `, ${nNom} par nom (à vérifier).` : "."));
+    tab = "id"; sortKey = "auteur"; $("tabs").hidden = !byname; updateTabs();
     head(); render(); $("results").style.display = "block";
   } catch (err) {
     status("Erreur : " + err.message);
@@ -363,6 +462,7 @@ $("f").addEventListener("submit", async e => {
   }
 });
 $("stop").onclick = () => { stopFlag = true; };
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = b.dataset.t; sortKey = "auteur"; updateTabs(); head(); render(); });
 $("filter").oninput = render;
 $("csv").onclick = exportCsv;
 $("sfilter").onchange = render;
