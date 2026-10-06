@@ -110,7 +110,7 @@ const CSV_COLS = [["src","Méthode"], ...COLS, ["disc","Disc."], ["hom","Hom."],
 const cols = () => tab === "nom" ? [...COLS.slice(0, 3), ["disc","Disc."], ["hom","Hom."], ...COLS.slice(3)] : COLS;
 const DISC = {"✓": "Même discipline fine que l'auteur", "~": "Discipline fine non comparable", "≠": "Discipline fine différente de celles de l'auteur"};
 const NORM = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
-const top = (m, n) => new Set([...m].filter(([, c]) => c / n >= 0.2).map(([k]) => k));
+const profil = (m, n) => new Set([...m].filter(([, c]) => c / n >= 0.2).map(([k]) => k));
 const inter = (a, b) => a.some(x => b.has(x));
 const STATUS = {todo: "À traiter", done: "Tamponnée", skip: "À ne pas tamponner"};
 const lsGet = (k, d) => { try { const v = localStorage.getItem("halmp-" + k); return v == null ? d : JSON.parse(v); } catch { return d; } };
@@ -339,7 +339,7 @@ async function findByName(coll, authors, margin){
     for (const pid of byName.get(c.k)){
       const a = authors.get(pid);
       if (c.y != null && a.min != null && (c.y < a.min - margin || c.y > a.max + margin)) continue;
-      const p0 = top(a.d0, a.n), p1 = top(a.d1, a.n);
+      const p0 = profil(a.d0, a.n), p1 = profil(a.d1, a.n);
       if (c.l0.length && p0.size && !inter(c.l0, p0)) continue;
       const disc = c.l1.length && p1.size ? (inter(c.l1, p1) ? "✓" : "≠") : "~";
       const hom = [...(persons.get(c.k) || [])].filter(x => !authors.has(x)).length;
