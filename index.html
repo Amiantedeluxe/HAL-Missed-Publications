@@ -53,6 +53,28 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
 .tabs{display:flex;gap:6px;margin-bottom:10px}
 .tabs[hidden]{display:none}
 .tabs button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.fld{display:flex;flex-direction:column;gap:4px;position:relative}
+.fld>label{font-weight:600;font-size:.9rem}
+.fld small{font-weight:400;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:3px;}
+.chips:empty{display:none}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px 4px 2px 10px;font-size:.85rem}
+.chip button{all:unset;cursor:pointer;width:20px;height:20px;display:grid;place-items:center;border-radius:50%;color:var(--muted)}
+.chip button:hover{color:var(--no)}
+.chip button:focus-visible{outline:2px solid var(--accent)}
+#sugg{position:absolute;top:100%;left:0;right:0;z-index:10;margin:4px 0 0;padding:4px;list-style:none;max-height:300px;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+#sugg[hidden]{display:none}
+#sugg li{padding:6px 8px;border-radius:4px;cursor:pointer}
+#sugg li[aria-selected="true"],#sugg li:hover{background:var(--hl)}
+#sugg li small{display:block}
+#sugg li.none{color:var(--muted);cursor:default}
+.tag{display:inline-block;padding:0 7px;border-radius:999px;font-size:.72rem;font-weight:700;background:var(--line);color:var(--ink)}
+.tag.v{background:var(--ok);color:var(--accent-ink)}
+.tag.o{background:#f2c94c;color:#1b2733}
+.tag.i{background:var(--no);color:var(--accent-ink)}
+.chip[data-v="VALID"]{background:#95d398;}
+.chip[data-v="OLD"]{background:#f7d56d}
+.chip[data-v="INCOMING"]{background:#f76d6d}
 .empty{padding:24px;color:var(--muted)}
 </style>
 </head>
@@ -63,7 +85,12 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
 
 <form id="f">
   <label>Code de la collection<input id="coll" required placeholder="CRHXIX" autocomplete="off"></label>
-  <label>Identifiants de structure <small>facultatif, séparés par un espace</small><input id="ids" placeholder="216924 542269" autocomplete="off"></label>
+  <div class="fld">
+    <label for="ids">Structure(s) <small>facultatif</small></label>
+    <div class="chips" id="chips"></div>
+    <input id="ids" placeholder="Nom, acronyme ou identifiant…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sugg">
+    <ul id="sugg" role="listbox" hidden></ul>
+  </div>
   <label>Marge (ans)<input id="margin" type="number" min="0" max="10" value="1"></label>
   <label>Portail <small>facultatif</small><input id="portal" placeholder="paris1" autocomplete="off" title="Préfixe du portail institutionnel : paris1 donne paris1.hal.science"></label>
   <div class="actions">
@@ -160,7 +187,7 @@ function progress(v, max){ const b = $("bar"); b.hidden = false; b.max = max || 
 async function getJson(path, params){
   const url = API + path + "?" + new URLSearchParams(params);
   for (let i = 0; i < 4; i++){
-    if (stopFlag) throw new Error("Analyse arrêtée");
+    if (stopFlag && path === "/search/") throw new Error("Analyse arrêtée");
     try {
       const r = await fetch(url);
       if (!r.ok){ const er = new Error("HTTP " + r.status); er.noRetry = r.status >= 400 && r.status < 500 && r.status !== 429; throw er; }
@@ -423,11 +450,106 @@ function exportCsv(){
   a.click(); URL.revokeObjectURL(a.href);
 }
 
+let picked = [], suggTimer = 0, suggSeq = 0, suggItems = [], suggIdx = -1;
+
+async function suggestStructures(term){
+  const words = term.split(/\s+/).map(w => w.replace(/[^\p{L}\p{N}]/gu, "")).filter(w => w.length > 1);
+  const up = term.toUpperCase().replace(/[^A-Z0-9-]/g, "");
+  const fl = "docid,label_s,acronym_s,code_s,type_s,valid_s,parentName_s";
+  const run = async (q, rows) => {
+    try { return (await getJson("/ref/structure/", {q, fl, rows, wt: "json"})).response.docs || []; }
+    catch (e) { if (e.noRetry) return []; throw e; }
+  };
+  const qs = [];
+  if (/^\d+$/.test(term)) qs.push(["docid:" + term, 5]);
+  if (up.length > 1){
+    qs.push([`acronym_s:"${up}" OR code_s:"${up}"`, 20]);
+    qs.push([`acronym_s:${up}* OR code_s:${up}*`, 30]);
+  }
+  if (words.length) qs.push([words.map(w => w + "*").join(" AND "), 50]);
+  const res = await Promise.all(qs.map(([q, n]) => run(q, n)));
+  const seen = new Set(), all = [];
+  for (const docs of res) for (const sg of docs) if (!seen.has(sg.docid)){ seen.add(sg.docid); all.push(sg); }
+  const rank = sg => ({VALID: 0, OLD: 1, INCOMING: 2}[sg.valid_s] ?? 3);
+  const exact = sg => [sg.acronym_s, sg.code_s].some(x => x && String(x).toUpperCase() === up) ? 0 : 1;
+  return all.sort((x, y) => rank(x) - rank(y) || exact(x) - exact(y)).slice(0, 25);
+}
+
+function renderChips(){
+  const box = $("chips"); box.replaceChildren();
+  for (const p of picked){
+    const c = document.createElement("span"); c.className = "chip"; c.dataset.v = p.valid || "";
+    c.append(document.createTextNode(`${p.acronym || p.label} · ${p.id}`));
+    const x = document.createElement("button");
+    x.type = "button"; x.textContent = "×"; x.title = "Retirer";
+    x.setAttribute("aria-label", "Retirer " + (p.acronym || p.label));
+    x.onclick = () => { picked = picked.filter(q => q.id !== p.id); renderChips(); };
+    c.append(x); box.append(c);
+  }
+}
+function closeSugg(){ $("sugg").hidden = true; $("ids").setAttribute("aria-expanded", "false"); suggIdx = -1; }
+function pick(sg){
+  const id = Number(sg.docid);
+  if (!picked.some(p => p.id === id)) picked.push({id, label: sg.label_s || "", acronym: sg.acronym_s || "", valid: sg.valid_s || ""});
+  $("ids").value = ""; renderChips(); closeSugg(); $("ids").focus();
+}
+function showSugg(list, msg){
+  const ul = $("sugg"); ul.replaceChildren(); suggItems = list; suggIdx = -1;
+  if (!list.length){
+    const li = document.createElement("li"); li.className = "none"; li.textContent = msg || "Aucune structure trouvée"; ul.append(li);
+  }
+  for (const sg of list){
+    const li = document.createElement("li"); li.setAttribute("role", "option");
+    li.textContent = sg.label_s || sg.acronym_s || String(sg.docid);
+    const sm = document.createElement("small");
+    const tag = document.createElement("span");
+    tag.className = "tag " + ({VALID: "v", OLD: "o", INCOMING: "i"}[sg.valid_s] || "");
+    tag.textContent = sg.valid_s || "?";
+    sm.append(tag, " " + [sg.type_s, sg.parentName_s, sg.docid].filter(Boolean).join(" · "));
+    li.append(sm);
+    li.onmousedown = e => { e.preventDefault(); pick(sg); };
+    ul.append(li);
+  }
+  ul.hidden = false; $("ids").setAttribute("aria-expanded", "true");
+}
+async function runSuggest(term){
+  const seq = ++suggSeq;
+  try {
+    const list = await suggestStructures(term);
+    if (seq === suggSeq) showSugg(list);
+  } catch (e) { if (seq === suggSeq) showSugg([], "Suggestions indisponibles : " + e.message); }
+}
+$("ids").addEventListener("input", () => {
+  clearTimeout(suggTimer);
+  const t = $("ids").value.trim();
+  if (t.length < 2){ closeSugg(); return; }
+  suggTimer = setTimeout(() => runSuggest(t), 300);
+});
+$("ids").addEventListener("focus", () => {
+  const c = $("coll").value.trim();
+  if (!$("ids").value.trim() && c) runSuggest(c);
+});
+$("ids").addEventListener("blur", closeSugg);
+$("ids").addEventListener("keydown", e => {
+  const opts = [...$("sugg").querySelectorAll("li[role=option]")];
+  if ($("sugg").hidden || !opts.length) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp"){
+    e.preventDefault();
+    suggIdx = e.key === "ArrowDown" ? (suggIdx + 1) % opts.length : (suggIdx <= 0 ? opts.length - 1 : suggIdx - 1);
+    opts.forEach((o, i) => o.setAttribute("aria-selected", String(i === suggIdx)));
+    opts[suggIdx].scrollIntoView({block: "nearest"});
+  } else if (e.key === "Enter" && suggIdx >= 0){
+    e.preventDefault(); pick(suggItems[suggIdx]);
+  } else if (e.key === "Escape") closeSugg();
+});
+
 $("f").addEventListener("submit", async e => {
   e.preventDefault();
   const coll = $("coll").value.trim();
   const margin = Math.max(0, parseInt($("margin").value, 10) || 0);
-  const ids = ($("ids").value.match(/\d+/g) || []).map(Number);
+  const typed = $("ids").value.trim();
+  if (typed && !/^[\d\s,;]+$/.test(typed)){ status("Erreur : choisis une structure dans la liste de suggestions, ou vide le champ."); return; }
+  const ids = [...new Set([...picked.map(p => p.id), ...(typed.match(/\d+/g) || []).map(Number)])];
   stopFlag = false; rows = []; $("log").textContent = ""; $("results").style.display = "none";
   $("go").disabled = true; $("stop").disabled = false;
   try {
