@@ -9,10 +9,10 @@
 @media (prefers-color-scheme:dark){:root{--bg:#10171d;--surface:#18222b;--ink:#e6ecf1;--muted:#93a3b1;--line:#2c3a46;--accent:#4fb3b8;--accent-ink:#0b1519;--hl:#1c2f33;--ok:#4cc36f;--no:#ef6b6b}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 ui-sans-serif,"Segoe UI",system-ui,sans-serif}
-main{max-width:1200px;margin:0 auto;padding:28px 20px 60px}
+main{max-width:1400px;margin:0 auto;padding:28px 20px 60px}
 h1{font-size:1.6rem;margin:0 0 4px;letter-spacing:-.01em}
 .sub{color:var(--muted);margin:0 0 22px;max-width:70ch}
-form{display:grid;grid-template-columns:1fr 1.4fr 110px 130px auto;gap:12px;align-items:end;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px}
+form{max-width:1400px;display:grid;grid-template-columns:1fr 1.4fr 110px 130px auto;gap:12px;align-items:end;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px}
 label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
 label small{font-weight:400;color:var(--muted)}
 input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)}
@@ -31,7 +31,7 @@ pre{max-height:220px;overflow:auto;background:var(--surface);border:1px solid va
 .bar input{flex:1;min-width:200px}
 .wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px}
 table{border-collapse:collapse;width:100%}
-th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 th button{all:unset;cursor:pointer;font-weight:700;white-space:nowrap}
 th button:focus-visible{outline:2px solid var(--accent)}
 tr:hover td{background:var(--hl)}
@@ -58,7 +58,7 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
 .fld small{font-weight:400;color:var(--muted)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:3px;}
 .chips:empty{display:none}
-.chip{display:inline-flex;align-items:center;border-radius:999px;padding:2px 4px 2px 10px;font-size:.85rem}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px 4px 2px 10px;font-size:.85rem}
 .chip button{all:unset;cursor:pointer;width:20px;height:20px;display:grid;place-items:center;border-radius:50%;color:var(--muted)}
 .chip button:hover{color:var(--no)}
 .chip button:focus-visible{outline:2px solid var(--accent)}
@@ -72,9 +72,14 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
 .tag.v{background:var(--ok);color:var(--accent-ink)}
 .tag.o{background:#f2c94c;color:#1b2733}
 .tag.i{background:var(--no);color:var(--accent-ink)}
-.chip[data-v="VALID"]{background:#B0F092}
-.chip[data-v="OLD"]{background:#F0D592}
-.chip[data-v="INCOMING"]{background:#F09292}
+.chip[data-v="VALID"]{background:#95d398;}
+.chip[data-v="OLD"]{background:#f7d56d}
+.chip[data-v="INCOMING"]{background:#f76d6d}
+.c-doi{max-width:15ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+td.c-deposant{min-width:12ch;max-width:24ch}
+td.c-titre{min-width:220px;max-width:420px}
+.c-annee,.c-fenetre,.c-type,.c-halId,.c-disc,.c-hom{white-space:nowrap}
+#hscroll{margin-bottom:6px}
 .empty{padding:24px;color:var(--muted)}
 </style>
 </head>
@@ -121,6 +126,7 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
     <span id="count"></span>
     <button id="csv" type="button" class="ghost">Exporter en CSV</button>
   </div>
+  <div id="hscroll" class="legend" hidden>↔ Le tableau est plus large que l'écran : fais-le défiler horizontalement.</div>
   <div class="wrap"><table><thead><tr id="head"></tr></thead><tbody id="body"></tbody></table></div>
 </section>
 </main>
@@ -132,7 +138,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const asList = v => v == null ? [] : Array.isArray(v) ? v : [v];
 const normName = s => (s || "").replace(/\s*\[[^\]]*\]\s*$/, "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
 const safeUrl = u => /^https?:\/\//.test(u || "");
-const COLS = [["statut","Statut"],["halId","Notice"],["auteur","Auteur non affilié"],["annee","Année"],["titre","Titre"],["type","Type"],["doi","DOI"],["deposant","Déposant"],["fenetre","Fenêtre"]];
+const COLS = [["statut","Statut"],["halId","Notice"],["auteur","Auteur non affilié"],["annee","Année"],["fenetre","Période"],["titre","Titre"],["type","Type"],["doi","DOI"],["deposant","Déposant"]];
 const CSV_COLS = [["src","Méthode"], ...COLS, ["disc","Disc."], ["hom","Hom."], ["url","Lien"]];
 const cols = () => tab === "nom" ? [...COLS.slice(0, 3), ["disc","Disc."], ["hom","Hom."], ...COLS.slice(3)] : COLS;
 const DISC = {"✓": "Même discipline fine que l'auteur", "~": "Discipline fine non comparable", "≠": "Discipline fine différente de celles de l'auteur"};
@@ -391,10 +397,16 @@ function updateTabs(){
   $("n-nom").textContent = `(${rows.filter(r => r.src === "nom").length})`;
 }
 
+function checkOverflow(){
+  const w = document.querySelector(".wrap");
+  $("hscroll").hidden = w.scrollWidth <= w.clientWidth + 1;
+}
+
 function head(){
   const tr = $("head"); tr.replaceChildren();
   for (const [k, l] of cols()){
     const th = document.createElement("th"), b = document.createElement("button");
+    th.className = "c-" + k;
     b.type = "button";
     b.textContent = l + (k === sortKey ? (sortDir > 0 ? " ▲" : " ▼") : "");
     b.onclick = () => { sortDir = k === sortKey ? -sortDir : 1; sortKey = k; head(); render(); };
@@ -419,23 +431,25 @@ function render(){
   if (!list.length){
     const tr = document.createElement("tr"), td = document.createElement("td");
     td.colSpan = cols().length; td.className = "empty"; td.textContent = "Aucune notice à afficher.";
-    tr.append(td); body.append(tr); return;
+    tr.append(td); body.append(tr); checkOverflow(); return;
   }
   for (const r of list){
     const tr = document.createElement("tr");
     tr.dataset.s = r.statut;
     for (const [k] of cols()){
       const td = document.createElement("td");
+      td.className = "c-" + k;
       const u = displayUrl(r);
       if (k === "statut") td.append(statusButtons(r, tr));
       else if (k === "disc"){ td.textContent = r.disc; td.title = DISC[r.disc] || ""; }
       else if ((k === "halId" || k === "titre") && u) td.append(link(u, r[k] || r.halId));
-      else if (k === "doi" && r.doi) td.append(link("https://doi.org/" + encodeURI(r.doi), r.doi));
-      else td.textContent = r[k];
+      else if (k === "doi" && r.doi){ td.title = r.doi; td.append(link("https://doi.org/" + encodeURI(r.doi), r.doi)); }
+      else { td.textContent = r[k]; if (k === "deposant") td.title = r[k]; }
       tr.append(td);
     }
     body.append(tr);
   }
+  checkOverflow();
 }
 
 function exportCsv(){
@@ -588,6 +602,7 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab =
 $("filter").oninput = render;
 $("csv").onclick = exportCsv;
 $("sfilter").onchange = render;
+window.addEventListener("resize", checkOverflow);
 $("portal").value = lsGet("portal", "");
 $("portal").oninput = () => { lsSet("portal", $("portal").value); render(); };
 </script>
