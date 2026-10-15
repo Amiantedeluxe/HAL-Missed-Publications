@@ -72,7 +72,6 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
 td.c-deposant{min-width:12ch;max-width:24ch}
 td.c-titre{min-width:220px;max-width:420px}
 .c-annee,.c-fenetre,.c-type,.c-halId,.c-disc,.c-hom{white-space:nowrap}
-
 .help{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:6px;border:1px solid var(--muted);border-radius:50%;font-size:.7rem;font-weight:700;color:var(--muted);cursor:help;position:relative;vertical-align:middle}
 .help:hover,.help:focus-visible{color:var(--accent);border-color:var(--accent)}
 .help::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);width:max-content;max-width:260px;padding:8px 10px;border-radius:6px;background:var(--ink);color:var(--surface);font-size:.8rem;font-weight:400;line-height:1.4;text-align:left;white-space:normal;opacity:0;pointer-events:none;transition:opacity .12s;z-index:20}
