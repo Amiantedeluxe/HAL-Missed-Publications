@@ -14,13 +14,13 @@
 <form id="f">
   <label><span>Code de la collection<span class="help" tabindex="0" data-tip="Le code visible dans l'adresse de la collection, par exemple CRHXIX pour hal.science/CRHXIX.">?</span></span><input id="coll" required placeholder="UNIV-PARIS1" autocomplete="off"> </label>
   <div class="fld">
-    <label for="ids">Structure(s)</label>
+    <label for="ids"><span>Structure(s)<span class="help" tabindex="0" data-tip="Le code visqdqsdqdsqdqIX pour hal.science/CRHXIX.">?</span></span></label>
     <div class="chips" id="chips"></div>
     <input id="ids" placeholder="Nom, acronyme ou identifiant…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sugg">
     <ul id="sugg" role="listbox" hidden></ul>
   </div>
   <label>Marge (ans)<input id="margin" type="number" min="0" max="10" value="1"></label>
-  <label>Portail <small>facultatif</small><input id="portal" placeholder="paris1" autocomplete="off" title="Préfixe du portail institutionnel : paris1 donne paris1.hal.science"></label>
+  <label><div style="display: flex; align-items: baseline; gap: 5px;">Portail <small>(facultatif)</small></div><input id="portal" placeholder="paris1" autocomplete="off" title="Préfixe du portail institutionnel : paris1 donne paris1.hal.science"></label>
   <div class="actions">
     <button id="go" type="submit">Lancer l'analyse</button>
     <button id="stop" type="button" class="ghost" disabled>Arrêter</button>
