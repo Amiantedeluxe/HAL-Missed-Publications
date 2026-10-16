@@ -15,12 +15,12 @@ const HELP = {
   type: "Type de document HAL (article, communication, ouvrage…).",
   doi: "DOI de la notice, cliquable.",
   deposant: "Personne qui a déposé la notice.",
-  disc: "Discipline : ✓ identique à celles de l'auteur, ~ comparable, ≠ différente. Indicatif.",
+  disc: "Discipline fine (niveau 1) : ✓ au moins une en commun avec l'auteur, ~ indéterminé (information manquante), ≠ aucune en commun.",
   hom: "Nombre d'autres personnes de même nom dans HAL parmi les notices examinées. Plus il est élevé, plus le risque d'homonyme est grand."
 };
 const CSV_COLS = [["src","Méthode"], ...COLS, ["disc","Disc."], ["hom","Hom."], ["url","Lien"]];
 const cols = () => tab === "nom" ? [...COLS.slice(0, 3), ["disc","Disc."], ["hom","Hom."], ...COLS.slice(3)] : COLS;
-const DISC = {"✓": "Même discipline fine que l'auteur", "~": "Discipline fine non comparable", "≠": "Discipline fine différente de celles de l'auteur"};
+const DISC = {"✓": "au moins une en commun avec l'auteur", "~": "indéterminé (information manquante)", "≠": "Discipline fine différente de celles de l'auteur"};
 const NORM = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
 const profil = (m, n) => new Set([...m].filter(([, c]) => c / n >= 0.2).map(([k]) => k));
 const inter = (a, b) => a.some(x => b.has(x));
