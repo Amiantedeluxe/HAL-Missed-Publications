@@ -9,10 +9,21 @@
 <body>
 <main>
 <h1>HAL - Repérage de notices hors collection</h1>
-<p class="sub">Un script identifie les auteurs affiliés à la structure et estime la période de présence en son sein à partir des dates de publication des documents. Il renvoie ensuite la liste des notices hors-collection dans lesquelles ces auteurs apparaissent en n'étant affiliés à aucune structure.</p>
+<p class="sub">Repère les notices HAL situées hors de la collection où un auteur de la structure figure sans aucune affiliation : ce sont des candidates au tamponnage.</p>
+
+<details class="how">
+  <summary>Comment ça marche ?</summary>
+  <ol>
+    <li><strong>Lecture de la collection</strong> L'outil lit toutes les notices de la collection et retient les auteurs qui ont un IdAuteur HAL et qui sont affiliés à la ou aux structures choisies.</li>
+    <li><strong>Période de présence</strong> Pour chaque auteur, il détermine l'année de sa première et de sa dernière notice dans la collection, puis ajoute la marge choisie.</li>
+    <li><strong>Recherche hors collection</strong> Il cherche dans tout HAL les notices <em>hors de la collection</em> où cet auteur (même IdAuteur) apparaît <em>sans aucune affiliation</em>, publiées pendant sa période de présence.</li>
+    <li><strong>Option « par nom »</strong> Elle ajoute les auteurs sans fiche HAL qui portent le même nom qu'un auteur identifié, sans affiliation, dans sa période et avec au moins un grand domaine disciplinaire en commun (level0_domain_s). Ces résultats sont dans un onglet séparé, à vérifier.</li>
+  </ol>
+  <p><strong>Limites</strong> Un auteur jamais affilié à la structure dans la collection n'est pas détecté. Les notices où l'auteur a une affiliation ailleurs ne sont pas signalées. La recherche par nom peut remonter des homonymes. Les résultats sont des pistes à contrôler, pas des certitudes.</p>
+</details>
 
 <form id="f">
-  <label><span>Code de la collection<span class="help" tabindex="0" data-tip="Le code visible dans l'adresse de la collection, par exemple LABO_X pour hal.science/LABO_X.">?</span></span><input id="coll" required placeholder="UNIV-PARIS1" autocomplete="off"> </label>
+  <label><span>Code de la collection<span class="help" tabindex="0" data-tip="Code visible dans l'adresse de la collection : LABO_X pour hal.science/LABO_X.">?</span></span><input id="coll" required placeholder="UNIV-PARIS1" autocomplete="off"> </label>
   <div class="fld">
     <label for="ids"><span>Structure(s)<span class="help" tabindex="0" data-tip="Nom de la ou des structures sur lesquelles sont basées la collection (possibilité de mettre la structure actuelle et les formes OLD)">?</span></span></label>
     <div class="chips" id="chips"></div>
