@@ -16,7 +16,7 @@ const HELP = {
   doi: "DOI de la notice, cliquable.",
   deposant: "Personne qui a déposé la notice.",
   disc: "Discipline : ✓ identique à celles de l'auteur, ~ comparable, ≠ différente. Indicatif.",
-  hom: "Nombre d'autres personnes de même nom ayant une fiche HAL parmi les notices examinées. Plus il est élevé, plus le risque d'homonyme est grand."
+  hom: "Nombre d'autres personnes de même nom dans HAL parmi les notices examinées. Plus il est élevé, plus le risque d'homonyme est grand."
 };
 const CSV_COLS = [["src","Méthode"], ...COLS, ["disc","Disc."], ["hom","Hom."], ["url","Lien"]];
 const cols = () => tab === "nom" ? [...COLS.slice(0, 3), ["disc","Disc."], ["hom","Hom."], ...COLS.slice(3)] : COLS;
