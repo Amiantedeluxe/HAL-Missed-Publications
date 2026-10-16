@@ -5,6 +5,19 @@ const asList = v => v == null ? [] : Array.isArray(v) ? v : [v];
 const normName = s => (s || "").replace(/\s*\[[^\]]*\]\s*$/, "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
 const safeUrl = u => /^https?:\/\//.test(u || "");
 const COLS = [["statut","Statut"],["halId","Notice"],["auteur","Auteur non affilié"],["annee","Année"],["fenetre","Période"],["titre","Titre"],["type","Type"],["doi","DOI"],["deposant","Déposant"]];
+const HELP = {
+  statut: "✓ déjà tamponnée, ✗ à ne pas tamponner. Enregistré dans ce navigateur.",
+  halId: "Identifiant de la notice HAL.",
+  auteur: "Auteur présent sur la notice sans aucune affiliation.",
+  annee: "Année de production de la notice.",
+  fenetre: "Première et dernière année où cet auteur apparaît affilié à la structure. Seules les notices proches de cette période sont retenues (avec la marge).",
+  titre: "Titre de la notice ; le lien ouvre la notice.",
+  type: "Type de document HAL (article, communication, ouvrage…).",
+  doi: "DOI de la notice, cliquable.",
+  deposant: "Personne qui a déposé la notice.",
+  disc: "Discipline : ✓ identique à celles de l'auteur, ~ comparable, ≠ différente. Indicatif.",
+  hom: "Nombre d'autres personnes de même nom ayant une fiche HAL parmi les notices examinées. Plus il est élevé, plus le risque d'homonyme est grand."
+};
 const CSV_COLS = [["src","Méthode"], ...COLS, ["disc","Disc."], ["hom","Hom."], ["url","Lien"]];
 const cols = () => tab === "nom" ? [...COLS.slice(0, 3), ["disc","Disc."], ["hom","Hom."], ...COLS.slice(3)] : COLS;
 const DISC = {"✓": "Même discipline fine que l'auteur", "~": "Discipline fine non comparable", "≠": "Discipline fine différente de celles de l'auteur"};
@@ -274,6 +287,7 @@ function head(){
     const th = document.createElement("th"), b = document.createElement("button");
     th.className = "c-" + k;
     b.type = "button";
+    b.title = HELP[k] || "";
     b.textContent = l + (k === sortKey ? (sortDir > 0 ? " ▲" : " ▼") : "");
     b.onclick = () => { sortDir = k === sortKey ? -sortDir : 1; sortKey = k; head(); render(); };
     th.append(b); tr.append(th);
