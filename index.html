@@ -9,17 +9,17 @@
 <body>
 <main>
 <h1>HAL - Repérage de notices hors collection</h1>
-<p class="sub">Repère les notices HAL situées hors de la collection où un auteur de la structure figure sans aucune affiliation : ce sont des candidates au tamponnage.</p>
+<p class="sub">Repère les notices HAL situées hors de la collection où un auteur de la structure figure sans aucune affiliation, pour potentiel ajout dans la collection.</p>
 
 <details class="how">
-  <summary>Comment ça marche ?</summary>
+  <summary>Fonctionnement</summary>
   <ol>
-    <li><strong>Lecture de la collection</strong> L'outil lit toutes les notices de la collection et retient les auteurs qui ont un IdAuteur HAL et qui sont affiliés à la ou aux structures choisies.</li>
-    <li><strong>Période de présence</strong> Pour chaque auteur, il détermine l'année de sa première et de sa dernière notice dans la collection, puis ajoute la marge choisie.</li>
-    <li><strong>Recherche hors collection</strong> Il cherche dans tout HAL les notices <em>hors de la collection</em> où cet auteur (même IdAuteur) apparaît <em>sans aucune affiliation</em>, publiées pendant sa période de présence.</li>
-    <li><strong>Option « par nom »</strong> Elle ajoute les auteurs sans fiche HAL qui portent le même nom qu'un auteur identifié, sans affiliation, dans sa période et avec au moins un grand domaine disciplinaire en commun (level0_domain_s). Ces résultats sont dans un onglet séparé, à vérifier.</li>
+    <li><strong>Lecture de la collection :</strong> Le script lit toutes les notices de la collection et retient les auteurs qui ont un IdAuteur et sont affiliés à la ou aux structures choisies au moins une fois.</li>
+    <li><strong>Période de présence :</strong> Pour chaque auteur, il détermine l'année de sa première et de sa dernière notice dans la collection, puis ajoute la marge choisie.</li>
+    <li><strong>Recherche hors collection :</strong> Il cherche dans tout HAL les notices <em>hors de la collection</em> où cet auteur (IdAuteur identique) apparaît <em>sans aucune affiliation</em>, publiées pendant sa période de présence.</li>
+    <li><strong>Option « par nom » :</strong> Elle ajoute les auteurs sans IdAuteur (IdForme uniquement) qui portent le même nom qu'un auteur identifié, sans affiliation, dans sa période et avec au moins un grand domaine disciplinaire en commun (level0_domain_s). Ces résultats sont affichés dans un onglet séparé, à vérifier.</li>
   </ol>
-  <p><strong>Limites</strong> Un auteur jamais affilié à la structure dans la collection n'est pas détecté. Les notices où l'auteur a une affiliation ailleurs ne sont pas signalées. La recherche par nom peut remonter des homonymes. Les résultats sont des pistes à contrôler, pas des certitudes.</p>
+  <p><strong>Limites :</strong> Un auteur jamais affilié à la structure dans la collection n'est pas détecté. Les notices où l'auteur a une affiliation ailleurs ne sont pas signalées. La recherche par nom peut remonter des homonymes. Les résultats sont des pistes à contrôler, pas des certitudes.</p>
 </details>
 
 <form id="f">
