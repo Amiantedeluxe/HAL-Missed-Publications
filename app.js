@@ -120,7 +120,7 @@ async function resolveStructures(code){
 }
 
 async function buildSeed(coll, ids, targetName){
-  const entries = [], names = new Map(), counts = new Map();
+  const entries = [], formEntries = [], names = new Map(), counts = new Map();
   let nDocs = 0, bad = 0, noPerson = 0;
   await paginate({q: "*:*", fq: "collCode_s:" + coll, fl: "docid,authIdHasStructure_fs,producedDateY_i,publicationDateY_i,level0_domain_s,level1_domain_s"}, (docs, total) => {
     for (const d of docs){
@@ -131,7 +131,7 @@ async function buildSeed(coll, ids, targetName){
         if (!p){ bad++; continue; }
         const [pid, name, sid, sname] = p;
         names.set(sid, sname); seen.add(sid);
-        if (pid <= 0){ noPerson++; continue; }
+        if (pid <= 0){ noPerson++; formEntries.push([name, sid, y, d.docid, asList(d.level0_domain_s), asList(d.level1_domain_s)]); continue; }
         entries.push([pid, name, sid, y, d.docid, asList(d.level0_domain_s), asList(d.level1_domain_s)]);
       }
       for (const s of seen) counts.set(s, (counts.get(s) || 0) + 1);
@@ -164,7 +164,23 @@ async function buildSeed(coll, ids, targetName){
     authors.set(pid, a);
   }
   log(`${authors.size} auteurs affiliés retenus.`);
-  return authors;
+  const forms = new Map(), seenFD = new Set();
+  for (const [name, sid, y, did, d0, d1] of formEntries){
+    if (!targets.has(sid)) continue;
+    const k = NORM(name); if (!k) continue;
+    const a = forms.get("f:" + k) || {name, names: new Set(), min: null, max: null, d0: new Map(), d1: new Map(), n: 0};
+    a.names.add(name);
+    if (y){ a.min = a.min == null ? y : Math.min(a.min, y); a.max = a.max == null ? y : Math.max(a.max, y); }
+    const kk = did + "-" + k;
+    if (!seenFD.has(kk)){
+      seenFD.add(kk); a.n++;
+      for (const x of d0) a.d0.set(x, (a.d0.get(x) || 0) + 1);
+      for (const x of d1) a.d1.set(x, (a.d1.get(x) || 0) + 1);
+    }
+    forms.set("f:" + k, a);
+  }
+  log(`${forms.size} noms d'auteurs sans IdAuteur affiliés (utilisés seulement en mode « par nom »).`);
+  return {authors, forms};
 }
 
 async function findCandidates(coll, authors, margin){
@@ -462,11 +478,11 @@ $("f").addEventListener("submit", async e => {
       targetName = normName(pick[0].label_s);
       log(`Structure retenue : ${pick[0].label_s} (${pick[0].docid})`);
     }
-    const authors = await buildSeed(coll, struct, targetName);
-    if (!authors.size) throw new Error("Aucun auteur trouvé : renseigne un identifiant de structure listé dans le journal.");
-    rows = await findCandidates(coll, authors, margin);
+        const {authors, forms} = await buildSeed(coll, struct, targetName);
+    if (!authors.size && !($("byname").checked && forms.size)) throw new Error("Aucun auteur trouvé : renseigne un identifiant de structure listé dans le journal.");
+    rows = authors.size ? await findCandidates(coll, authors, margin) : [];
     const byname = $("byname").checked;
-    if (byname) rows = rows.concat(await findByName(coll, authors, margin));
+    if (byname) rows = rows.concat(await findByName(coll, new Map([...authors, ...forms]), margin));
     const nId = rows.filter(r => r.src === "id").length, nNom = rows.length - nId;
     status(`Terminé : ${nId} notices par identifiant` + (byname ? `, ${nNom} par nom (à vérifier).` : "."));
     tab = "id"; sortKey = "auteur"; $("tabs").hidden = !byname; updateTabs();
