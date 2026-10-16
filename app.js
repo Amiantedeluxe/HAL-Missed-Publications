@@ -389,7 +389,9 @@ function renderChips(){
   const box = $("chips"); box.replaceChildren();
   for (const p of picked){
     const c = document.createElement("span"); c.className = "chip"; c.dataset.v = p.valid || "";
-    c.append(document.createTextNode(`${p.acronym || p.label} · ${p.id}`));
+    const nm = document.createElement("span"); nm.textContent = p.acronym || p.label;
+    const idt = document.createElement("small"); idt.textContent = p.id;
+    c.append(nm, idt);
     const x = document.createElement("button");
     x.type = "button"; x.textContent = "×"; x.title = "Retirer";
     x.setAttribute("aria-label", "Retirer " + (p.acronym || p.label));
