@@ -54,7 +54,10 @@ tr[data-s="skip"] td:first-child{box-shadow:inset 3px 0 0 var(--muted)}
 .fld small{font-weight:400;color:var(--muted)}
 .chips{display:flex;flex-wrap:wrap;gap:2px 14px;margin-bottom:2px}
 .chips:empty{display:none}
-.chip{display:inline-flex;align-items:center;gap:5px;font-size:.85rem;font-weight:600;line-height:1.5}
+.fldhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px}
+.fldhead label{flex:none}
+.fldhead .chips{margin:0}
+.chip{display:inline-flex;align-items:baseline;gap:5px;font-size:.85rem;font-weight:600;line-height:1.5}
 .chip small{font-size:.72rem;font-weight:400}
 .chip button{all:unset;cursor:pointer;font-size:.8rem;line-height:1;font-weight:400;padding:0 1px;color:#93a3b1}
 .chip button:hover{color:var(--no)}

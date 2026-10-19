@@ -25,8 +25,10 @@
 <form id="f">
   <label><span>Code de la collection<span class="help" tabindex="0" data-tip="Code visible dans l'adresse de la collection : LABO_X pour hal.science/LABO_X.">?</span></span><input id="coll" required placeholder="UNIV-PARIS1" autocomplete="off"> </label>
   <div class="fld">
+    <div class="fldhead">
     <label for="ids"><span>Structure(s)<span class="help" tabindex="0" data-tip="Nom de la ou des structures sur lesquelles sont basées la collection (possibilité de mettre la structure actuelle et les formes OLD)">?</span></span></label>
     <div class="chips" id="chips"></div>
+    </div>
     <input id="ids" placeholder="Nom, acronyme ou identifiant…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="sugg">
     <ul id="sugg" role="listbox" hidden></ul>
   </div>
